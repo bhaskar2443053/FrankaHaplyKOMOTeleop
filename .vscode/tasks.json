@@ -1,0 +1,32 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Teleop with Haply (Simulation)",
+            "type": "shell",
+            "command": "python3",
+            "args": [
+                "teleop_with_haply.py"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Teleop with Haply (Real)",
+            "type": "shell",
+            "command": "python3",
+            "args": [
+                "teleop_with_haply.py",
+                "--teleop-in-real",
+                // "--force-feedback",
+                // "--avoid-self-collisions"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
+        }
+    ]
+}

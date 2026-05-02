@@ -1,0 +1,4 @@
+uv.lock
+.venv/*
+
+z.*
