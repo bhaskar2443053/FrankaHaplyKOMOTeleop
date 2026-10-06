@@ -27,6 +27,21 @@
                 "cwd": "${workspaceFolder}"
             },
             "problemMatcher": []
+        },
+        {
+            "label": "Teleop with Haply (ProteCT follower via rosbridge)",
+            "type": "shell",
+            "command": "python3",
+            "args": [
+                "teleop_haply_ros.py",
+                "--rosbridge-uri",
+                "ws://localhost:9090",
+                // "--activate",
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
         }
     ]
 }

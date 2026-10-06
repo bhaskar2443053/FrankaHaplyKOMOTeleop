@@ -84,3 +84,49 @@ In case you do this with a new machine you have to manually set your local IP ad
   - optional self-collision objective.
 - If IK is feasible, the resulting joint configuration is sent with `BotOp.moveTo(..., overwrite=True)` and gripper commands are issued from Haply button state.
 - Force feedback is currently alpha: in real-robot mode, external wrench data is read and clipped before being sent back to Haply. On [this botop fork](https://github.com/christian-helms/botop/tree/external_wrench_sensing) the sensed external wrench from libranka is forwarded through botop. (get_tauExternal is not enough to get the contact wrench via a LSP involving the transpose of the contact Jacobian as the exact control torques applied by libfranka are not available in botop.) On the "hackathon notebook" this fork is compiled.
+
+## Force-Feedback Teleop of a ProteCT Follower via ROS 1 (`teleop_haply_ros.py`)
+
+`teleop_haply_ros.py` uses the Haply Inverse3 as the leader for a Franka follower that runs the ProteCT (dev-telemedicine) stack. It replaces KOMO/botop: the follower is controlled at 1 kHz on the robot PC by the `haply_force_teleop` mode of the multi mode controller, and this script only exchanges targets and forces with it.
+
+```
+Haply PC                                          Robot PC (ProteCT docker, ROS Melodic)
+teleop_haply_ros.py                               multi_mode_controller / haply_force_teleop (1 kHz)
+  Haply Inverse Service  ws://localhost:10001       Cartesian impedance + contact dependent force limits,
+  rosbridge              ws://<robot-pc>:9090 <---> velocity feed-forward, force lock along z, joint walls
+     target (250 Hz) ---------------------------->  follows only the increments of the target
+     force_lock     ----------------------------->  holds the contact force along base z
+     <------------------------------- wrench, state (O_F_ext_hat_K at 250 Hz)
+```
+
+No ROS installation is needed on the Haply PC; the script only needs `requirements.txt` (robotic is not used).
+
+### Usage
+
+1. On the robot PC, build and start ProteCT with the `haply_force_teleop` controller (`panda_controllers_impl`, listed in `control_types` of `protect_robots.launch`, configured in `protect_launch/config/multi_mode_config.yaml`). `protect_robots.launch` already starts rosbridge on port 9090.
+2. Start the bridge:
+   ```
+   uv run teleop_haply_ros.py --rosbridge-uri ws://<robot-pc>:9090 --activate
+   ```
+   `--activate` switches the follower to `haply_force_teleop` (and back to `stop` on exit) through the `switch_control` action. Without it, switch modes as usual, e.g. from a behavior tree with `{"ctrl_type": "haply_force_teleop", "ctrl_resources": ["follower"]}`.
+3. Controls:
+   - Hold `a` on the VerseGrip to move the follower (deadman/clutch, `--clutch-mode hold|toggle|always`). Release it to reposition the Haply; the follower holds its pose and continues without a jump when you press again.
+   - Press `b` while the follower is in contact to hold the current contact force along base z (the `force_teleop` behaviour): z is then force controlled while x, y and the orientation still follow the Haply, and the Haply holds your hand in z. Press `b` again to release. The robot refuses the lock without contact and releases it itself if the contact is lost, z moves more than 3 cm, or the Haply input stops.
+   - `Ctrl+C` sets the Haply force to zero and stops the bridge; the follower holds its pose (and switches to `stop` with `--activate`).
+
+### Force feedback
+
+The follower's `O_F_ext_hat_K` is rendered with the logic of the Franka leader in the ProteCT teleop controllers: `-force_scale * F_ext` mapped to Haply axes, faded in by the same tanh contact ramp (`--contact-threshold`, so sensor noise is not felt in free motion), reduced while the clutch is released (`--force-scale-idle`), low-pass filtered and rate limited (`--max-feedback-rate`), plus local damping of the Haply (`--damping`), virtual walls at the workspace box (`--workspace-half-extent`, keep it equal to `cuboid/2` on the robot) and a detent along z while the force lock is active. Without new wrench data the feedback fades out.
+
+### Before the first run on hardware
+
+- Start with a low gain, e.g. `--force-scale 0.1 --max-force 1.5`, touch a soft object and check that the Haply pushes your hand away from the contact. Flip `--force-sign` only if it pulls.
+- Check `--position-axes` / `--orientation-axes` for your installation with the clutch released first, then with small motions.
+- The follower's joint walls use the soft joint limits of the URDF loaded by ProteCT; make sure it matches your robot model.
+
+### Tests
+
+```
+uv run --with pytest pytest tests
+```
+The tests cover the mapping, clutching, rendering and force lock logic, and run the bridge end to end against a fake Haply service and a fake rosbridge.
